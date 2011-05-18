@@ -27,11 +27,12 @@ from django.views.decorators.http import require_http_methods
 from coreo.ucore import shapefile, utils
 from coreo.ucore.kmlparser import KmlParser
 from coreo.ucore.models import *
-
+from django.views.decorators.csrf import csrf_exempt
 
 
 @require_http_methods(['POST'])
 @login_required
+@csrf_exempt
 def add_library(request):
   """
   Add ``LinkLibrary``s to the user's ``LinkLibrary`` collection (i.e. the ``CoreUser.libraries`` field).
@@ -50,14 +51,15 @@ def add_library(request):
   return HttpResponseRedirect(reverse('coreo.ucore.views.success'))
 
 
-
 @require_http_methods(['GET'])
 def check_username(request):
   username = request.GET['username'].strip()
   return HttpResponse(json.dumps(CoreUser.objects.filter(username=username).exists()))
 
+
 @require_http_methods(['POST', 'GET'])
 @login_required
+@csrf_exempt
 def create_library(request):
   """
   This view when called will create a link library. It won't work properly unless you are
@@ -132,9 +134,9 @@ def create_library(request):
     return render_to_response('createlib.html', { 'allLinks' : allLinks, 'allTags': allTags }, context_instance=RequestContext(request))
 
 
-
 @require_http_methods(['POST'])
 @login_required
+@csrf_exempt
 def update_library(request):
   user = CoreUser.objects.get(username=request.user)
   if 'id' not in request.POST:
@@ -200,6 +202,7 @@ def get_libraries(request):
 
 
 @require_http_methods(["GET", "POST"])
+@csrf_exempt
 def links(request):
   if request.method == 'GET':
     if 'url' in request.GET:
@@ -249,6 +252,7 @@ def links(request):
 
 @require_http_methods(["POST"])
 @login_required
+@csrf_exempt
 def delete_link(request):
   link = request.POST['id'].strip()
   link2delete = Link.objects.get(pk=link)
@@ -258,6 +262,7 @@ def delete_link(request):
 
 @require_http_methods(["POST"])
 @login_required
+@csrf_exempt
 def delete_libraries(request):
   
   # library_ids = request.POST["ids"].strip()
@@ -280,6 +285,10 @@ def future_feature(request):
   return render_to_response('future.html', context_instance=RequestContext(request))
 
 
+@require_http_methods(['GET'])
+def help(request):
+  return render_to_response('help.html', context_instance=RequestContext(request))
+
 
 @require_http_methods(['POST'])
 def create_user(request):
@@ -301,6 +310,16 @@ def create_user(request):
       phone_number = result.group(1) + result.group(2) + result.group(3)
   except Exception, e:
     logging.error('Exception parsing phone number: %s' % e.message)
+  try:
+    if check_password_rules(password) is False:
+      return render_to_response('register.html',
+          {'sid': sid, 'username': username, 'first_name': first_name,
+           'last_name': last_name, 'email': email, 'phone_number': phone_number, 'error_message': 'Your password must be 8 or more characters and contain at least 1 number or at least 1 special character.'
+        }, context_instance=RequestContext(request))
+
+  except Exception, e:
+    logging.error('Password doesn\'t match rules applied')
+    print e
 
   if not (sid and username and first_name and last_name and password and email and phone_number):
     # redisplay the registration page
@@ -531,7 +550,7 @@ def get_tags(request):
     parameter submitted.
   """
   term = request.GET['term']
-  print "Getting tags like %s" % term
+  # print "Getting tags like %s" % term
   if ',' in term:
     termList = term.split(',')
     length_of_list = len(termList)
@@ -576,7 +595,7 @@ def login(request):
 
     return render_to_response('login.html', {'next' : next}, context_instance=RequestContext(request))
   else:
-    # authenticate the user viw username/password
+    # authenticate the user view username/password
     username = request.POST['username'].strip()
     password = request.POST['password'].strip()
     next = request.POST['next'].strip() if 'next' in request.POST else '/map/'
@@ -623,31 +642,28 @@ def map_view(request):
 
   return render_to_response('map.html', {'user': user}, context_instance=RequestContext(request))
 
+@require_http_methods(['GET'])
 @login_required
 def manage_libraries(request):
-  if request.method == 'GET':
-    user = CoreUser.objects.get(username=request.user)
-    library_list = user.libraries.all()
-    available_list = LinkLibrary.objects.all()
-    for i in library_list:
-      available_list = available_list.exclude(name=i.name)
-    return render_to_response('manage-libraries2.html', { 'library_list': library_list, 'available_list': available_list }, context_instance=RequestContext(request))
-  else:
-    return HttpResponse("Only GET supported so far.")
-
-def manage_libraries2(request):
-  if request.method == 'GET':
-    user = CoreUser.objects.get(username=request.user)
-    libform = LibraryForm(instance=user)
-    LibraryFormSet = formset_factory(LibraryForm)
-    return render_to_response('sample.html', { 'form', libform }, context_instance=RequestContext(request))    
-  else:
-    user = CoreUser.objects.get(username=request.user)
-    libform = LibraryForm(request.POST, instance=user)
-    libform.save()
-    return HttpResponseRedirect('/manage-libraries/?saved=True')
+  user = CoreUser.objects.get(username=request.user)
+  library_list = user.libraries.all()
+  available_list = LinkLibrary.objects.all()
+  for i in library_list:
+    available_list = available_list.exclude(name=i.name)
+  return render_to_response('manage-libraries2.html', { 'library_list': library_list, 'available_list': available_list }, context_instance=RequestContext(request))
 
 
+# def manage_libraries2(request):
+#   if request.method == 'GET':
+#    user = CoreUser.objects.get(username=request.user)
+#    libform = LibraryForm(instance=user)
+#    LibraryFormSet = formset_factory(LibraryForm)
+#    return render_to_response('sample.html', { 'form', libform }, context_instance=RequestContext(request))    
+#  else:
+#    user = CoreUser.objects.get(username=request.user)
+#    libform = LibraryForm(request.POST, instance=user)
+#    libform.save()
+#    return HttpResponseRedirect('/manage-libraries/?saved=True')
 
 
 @require_http_methods(['GET', 'POST'])
@@ -667,7 +683,6 @@ def modify_settings(request):
     user.settings.wants_emails = wants_emails
     user.settings.skin = skin
     user.settings.save()
-
     return HttpResponseRedirect('/settings/?saved=True')
 
 
@@ -711,7 +726,6 @@ def poll_notifications(request, notification_id):
     logging.debug('Received the following id to delete from notifications : %s' % notification_id)
     notification = Notification.objects.filter(user=user, pk=notification_id)
     notification.delete()
-
     return response
 
 
@@ -843,7 +857,9 @@ def trophy_room(request):
   try:
     user = CoreUser.objects.get(username=request.user.username)
     trophy_list = Trophy.objects.all()
-    trophy_case_list = TrophyCase.objects.all()
+    trophy_case_list = TrophyCase.objects.filter(user=user)
+    # print 'total trophy_case_list length: %d' % len(trophy_case_list)
+    # print 'total trophy_list length: %d' % len(trophy_list)
     earn_total = []
     earn_progress = []
     percentage = []
@@ -855,7 +871,7 @@ def trophy_room(request):
     for t in trophy_list:
       for o in trophy_case_list:
         if (o.trophy == t):
-          # print 'Found one : %s' % t.name
+          print 'Found one : %s' % t.name
           if o.date_earned:
             earn_progress += [t.earning_req]
             percentage += [(o.count / t.earning_req)*100]
@@ -865,7 +881,8 @@ def trophy_room(request):
         else:
           earn_progress += [0]
           percentage += [(o.count / t.earning_req)*100]
-    # print 'total earn_progress looks like: ', earn_progress
+    print 'total earn_progress looks like: ', earn_progress
+    print 'total percentage is : ', percentage
     combine_list = zip(trophy_list, earn_progress, percentage)
   except CoreUser.DoesNotExist:
     # as long as the login_user view forces them to register if they don't already
@@ -875,7 +892,7 @@ def trophy_room(request):
   return render_to_response('trophyroom.html',
       {'trophy_list' : combine_list,
        'trophy_case_list' : trophy_case_list,
-       'user' : user.username,
+       'user' : user,
        'earn_total' : earn_total,
        'earn_progress' : earn_progress,
       }, context_instance=RequestContext(request))
@@ -941,17 +958,16 @@ def update_password(request):
     new_password = request.POST['password'].strip()
 
     if (old_password == new_password):
-      return render_to_response('password.html', {'error_message': 'Your new password must be different from your current password. Please try again.'},
-          context_instance=RequestContext(request))
-
+      return render_to_response('password.html', {'error_message': 'Your new password must be different from your current password. Please try again.'}, context_instance=RequestContext(request))
+    if check_password_rules(new_password) is False:
+      return render_to_response('password.html', {'error_message': 'Your new password must be 8 or more characters and contain at least 1 number or at least 1 special character.'}, context_instance=RequestContext(request))
+      
     if user.check_password(old_password):
       user.set_password(new_password)
       user.save()
-
       return HttpResponseRedirect('/update-password/?saved=True')
     else:
-      return render_to_response('password.html', {'error_message': 'Invalid password. Please try again.'},
-           context_instance=RequestContext(request))
+      return render_to_response('password.html', {'error_message': 'Invalid password. Please try again.'}, context_instance=RequestContext(request))
        
 
 @require_http_methods(['GET', 'POST'])
@@ -1024,7 +1040,13 @@ def kmlproxy(request):
       try:
         zipFile = zipfile.ZipFile(kmzBuffer, 'r')
         # KMZ spec says zip will contain exactly one file, named doc.kml
-        kmlTxt = zipFile.read('doc.kml')
+        for name in zipFile.namelist():
+          if name.find('.kml') != -1:
+            # print 'found one: %s ' % name
+            kmlTxt = zipFile.read(name)
+            break
+          else:
+            print 'no kml found in the kmz file.'
       finally:
         kmzBuffer.close()
 
@@ -1075,6 +1097,7 @@ def kmlproxy(request):
 
 @require_http_methods(['GET', 'POST'])
 @login_required
+@csrf_exempt
 def kml2json(request):
     if request.method == 'GET':
       return render_to_response('kml2json.html', context_instance=RequestContext(request))
@@ -1127,3 +1150,13 @@ def get_current_user(request):
   currentUser = CoreUser.objects.select_related().get(username=request.user.username)
   return HttpResponse(content_type=utils.JSON_CONTENT_TYPE, 
                           content=utils.get_coreuser_json(currentUser))
+
+# only used internally.  Never called from a url.
+def check_password_rules(pword):
+  if len(pword) < 8:
+    return False 
+  rule2 = re.compile(r"\d+")
+  rule3 = re.compile(r"(`+)|(~+)|(!+)|(@+)|(#+)|(\$+)|(%+)|(\^+)|(&+)|(\*+)|(\(+)|(\)+)|(-+)|(_+)|(\++)|(=+)|({+)|(\[+)|(}+)|(\]+)|(\\+)|(\|+)|(\:+)|(\;+)|('+)|(\"+)|(\<+)|(\>+)|(,+)|(\.+)|(\?+)|(\/+)")
+  if rule2.search(pword) is None and rule3.search(pword) is None:
+      return False
+  return True
